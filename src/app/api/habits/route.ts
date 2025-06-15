@@ -2,28 +2,30 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Habit } from '@/models/habit.model';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import mongoose from 'mongoose';
 
 // GET /api/habits - Get all habits for the current user
 export async function GET() {
   try {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getServerSession(authOptions);
+    console.log('Session in GET /api/habits:', session);
+
+    if (!session?.user?.id) {
+      console.log('Unauthorized: No valid session or user id');
+      return NextResponse.json({ error: 'Unauthorized - Please log in' }, { status: 401 });
     }
 
     await connectToDatabase();
     
-    // Find habits for the current user using $where to avoid ObjectId casting
     const habits = await Habit.find({
-      $expr: {
-        $eq: ['$userId', session.user.email]
-      }
+      userId: new mongoose.Types.ObjectId(session.user.id)
     });
-    console.log('User habits:', habits);
     
+    console.log(`Found ${habits.length} habits for user ${session.user.id}`);
     return NextResponse.json(habits);
   } catch (error: any) {
-    console.error('Error details:', {
+    console.error('Error in GET /api/habits:', {
       name: error?.name,
       message: error?.message,
       stack: error?.stack
@@ -35,17 +37,27 @@ export async function GET() {
 // POST /api/habits - Create a new habit
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getServerSession(authOptions);
+    console.log('Session in POST /api/habits:', session);
+
+    if (!session?.user?.id) {
+      console.log('Unauthorized: No valid session or user id');
+      return NextResponse.json({ error: 'Unauthorized - Please log in' }, { status: 401 });
     }
 
     const body = await request.json();
+    console.log('Request body:', body);
+
+    if (!body.name) {
+      console.log('Bad Request: Missing habit name');
+      return NextResponse.json({ error: 'Habit name is required' }, { status: 400 });
+    }
+
     await connectToDatabase();
 
     const habitData = {
       ...body,
-      userId: session.user.email
+      userId: new mongoose.Types.ObjectId(session.user.id)
     };
 
     console.log('Creating habit with data:', habitData);
@@ -53,9 +65,10 @@ export async function POST(request: Request) {
     const habit = new Habit(habitData);
     await habit.save();
 
+    console.log('Successfully created habit:', habit);
     return NextResponse.json(habit);
   } catch (error: any) {
-    console.error('Error details:', {
+    console.error('Error in POST /api/habits:', {
       name: error?.name,
       message: error?.message,
       stack: error?.stack

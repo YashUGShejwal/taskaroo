@@ -45,7 +45,9 @@ export default function HabitsPage() {
 
   const fetchHabits = async () => {
     try {
-      const response = await fetch('/api/habits');
+      const response = await fetch('/api/habits', {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch habits');
       const data = await response.json();
       setHabits(data);
@@ -57,8 +59,19 @@ export default function HabitsPage() {
 
   const fetchDailyRecords = async () => {
     try {
-      const response = await fetch('/api/daily-records');
-      if (!response.ok) throw new Error('Failed to fetch daily records');
+      const today = new Date();
+      const month = today.getMonth();
+      const year = today.getFullYear();
+      
+      const response = await fetch(`/api/daily-records?month=${month}&year=${year}`, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch daily records');
+      }
+      
       const data = await response.json();
       setDailyRecords(data);
     } catch (error) {
@@ -89,6 +102,7 @@ export default function HabitsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(newHabit),
       });
 
@@ -121,6 +135,7 @@ export default function HabitsPage() {
     try {
       const response = await fetch(`/api/habits/${habitId}`, {
         method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -148,6 +163,7 @@ export default function HabitsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           habitId,
           date,

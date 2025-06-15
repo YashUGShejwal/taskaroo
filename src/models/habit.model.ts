@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IHabit extends Document {
-  userId: string;
+  userId: mongoose.Types.ObjectId;
   name: string;
   color: string;
   frequency: 'daily' | 'weekly' | 'monthly';
@@ -15,8 +15,9 @@ export interface IHabit extends Document {
 const habitSchema = new Schema<IHabit>(
   {
     userId: {
-      type: mongoose.Schema.Types.Mixed,
+      type: mongoose.Schema.Types.ObjectId,
       required: true,
+      ref: 'User',
       index: true,
     },
     name: {

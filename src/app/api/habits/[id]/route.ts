@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Habit } from '@/models/habit.model';
+import mongoose from 'mongoose';
 
 // PUT /api/habits/[id] - Update a habit
 export async function PUT(
@@ -10,7 +11,7 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
@@ -24,7 +25,10 @@ export async function PUT(
 
     await connectToDatabase();
     const habit = await Habit.findOneAndUpdate(
-      { _id: params.id, userId: session.user.id },
+      { 
+        _id: new mongoose.Types.ObjectId(params.id), 
+        userId: new mongoose.Types.ObjectId(session.user.id) 
+      },
       { name, description },
       { new: true }
     );
@@ -59,14 +63,14 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
     await connectToDatabase();
     const habit = await Habit.findOneAndDelete({
-      _id: params.id,
-      userId: session.user.id,
+      _id: new mongoose.Types.ObjectId(params.id),
+      userId: new mongoose.Types.ObjectId(session.user.id),
     });
 
     if (!habit) {

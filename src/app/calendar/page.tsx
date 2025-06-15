@@ -18,7 +18,9 @@ export default function CalendarPage() {
 
   const fetchHabits = async () => {
     try {
-      const response = await fetch('/api/habits');
+      const response = await fetch('/api/habits', {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch habits');
       const data = await response.json();
       setHabits(data);
@@ -31,7 +33,9 @@ export default function CalendarPage() {
     try {
       const month = currentMonth.getMonth();
       const year = currentMonth.getFullYear();
-      const response = await fetch(`/api/daily-records?month=${month}&year=${year}`);
+      const response = await fetch(`/api/daily-records?month=${month}&year=${year}`, {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch daily records');
       const data = await response.json();
       setDailyRecords(data);
@@ -65,6 +69,7 @@ export default function CalendarPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           date: selectedDate,
           habits: completedHabits,
