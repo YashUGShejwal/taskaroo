@@ -25,15 +25,14 @@ export async function GET(request: Request) {
     if (!month || !year) {
       console.log('Bad Request: Missing required parameters');
       return NextResponse.json(
-        { error: 'Month and year are required query parameters' }, 
+        { error: 'Month and year are required query parameters' },
         { status: 400 }
       );
     }
 
-    // Validate month and year are valid numbers
     const monthNum = parseInt(month);
     const yearNum = parseInt(year);
-    
+
     if (isNaN(monthNum) || isNaN(yearNum)) {
       console.log('Bad Request: Invalid month or year format');
       return NextResponse.json(
@@ -62,7 +61,11 @@ export async function GET(request: Request) {
         $gte: startDate,
         $lte: endDate,
       },
-    }).populate('habitId');
+    }).populate({
+      path: 'completions.habitId',
+      model: 'Habit',
+      options: { strictPopulate: false }
+    });
 
     console.log(`Found ${records.length} records for user ${session.user.id}`);
     return NextResponse.json(records);
@@ -75,16 +78,16 @@ export async function GET(request: Request) {
 // POST /api/daily-records - Create or update daily record
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    console.log('Session in POST /api/daily-records:', session);
+    const authSession = await getServerSession(authOptions);
+    console.log('Session in POST /api/daily-records:', authSession);
 
-    if (!session?.user?.id) {
+    if (!authSession?.user?.id) {
       console.log('Unauthorized: No valid session or user id');
       return NextResponse.json({ error: 'Unauthorized - Please log in' }, { status: 401 });
     }
 
     const data = await request.json();
-    console.log('Request body:', data);
+    console.log('Request body:', JSON.stringify(data, null, 2));
 
     if (!data.date || !Array.isArray(data.habits)) {
       console.log('Bad Request: Missing required fields');
@@ -94,7 +97,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate date format
     const date = new Date(data.date);
     if (isNaN(date.getTime())) {
       console.log('Bad Request: Invalid date format');
@@ -104,7 +106,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate habits array
     if (data.habits.length === 0) {
       console.log('Bad Request: Habits array is empty');
       return NextResponse.json(
@@ -113,43 +114,48 @@ export async function POST(request: Request) {
       );
     }
 
+    for (const habit of data.habits) {
+      if (!habit.id || typeof habit.completed !== 'boolean') {
+        console.log('Bad Request: Invalid habit data:', habit);
+        return NextResponse.json(
+          { error: 'Each habit must have an id and completed status' },
+          { status: 400 }
+        );
+      }
+    }
+
     await connectToDatabase();
 
-    // Update or create records for each habit
-    const records = await Promise.all(
-      data.habits.map(async (habit: { id: string; completed: boolean }) => {
-        if (!habit.id) {
-          console.log('Bad Request: Missing habit id');
-          throw new Error('Habit id is required');
-        }
+    // Prepare the completions array
+    const completions = data.habits.map((habit: any) => ({
+      habitId: new mongoose.Types.ObjectId(habit.id),
+      completed: habit.completed,
+    }));
 
-        try {
-          const existingRecord = await DailyRecord.findOne({
-            userId: new mongoose.Types.ObjectId(session.user.id),
-            date: date,
-            habitId: new mongoose.Types.ObjectId(habit.id),
-          });
+    // Create or update the daily record
+    const updatedRecord = await DailyRecord.findOneAndUpdate(
+      {
+        userId: new mongoose.Types.ObjectId(authSession.user.id),
+        date: date,
+      },
+      {
+        $set: {
+          completions: completions,
+          updatedAt: new Date(),
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    ).populate({
+      path: 'completions.habitId',
+      model: 'Habit',
+      options: { strictPopulate: false }
+    });
 
-          if (existingRecord) {
-            existingRecord.completed = habit.completed;
-            return existingRecord.save();
-          }
-
-          return DailyRecord.create({
-            userId: new mongoose.Types.ObjectId(session.user.id),
-            date: date,
-            habitId: new mongoose.Types.ObjectId(habit.id),
-            completed: habit.completed,
-          });
-        } catch (error) {
-          console.error('Error processing habit:', habit, error);
-          throw error;
-        }
-      })
-    );
-
-    console.log(`Successfully processed ${records.length} records`);
-    return NextResponse.json(records);
+    console.log('Updated record:', updatedRecord);
+    return NextResponse.json(updatedRecord);
   } catch (error) {
     console.error('Error in POST /api/daily-records:', error);
     if (error instanceof Error) {
@@ -157,4 +163,4 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
-} 
+}

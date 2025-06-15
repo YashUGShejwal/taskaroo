@@ -2,16 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Habit } from '@/models/habit.model';
-import { DailyRecord } from '@/models/daily-record.model';
+import type { IHabit } from '@/models/habit.model';
+import type { IDailyRecord } from '@/models/daily-record.model';
+import mongoose from 'mongoose';
 
 interface DayDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   date: Date;
-  habits: Habit[];
-  dailyRecords: DailyRecord[];
-  onSubmit: (completedHabits: { id: string; completed: boolean }[]) => void;
+  habits: IHabit[];
+  dailyRecords: IDailyRecord[];
+  onSubmit: (habits: { id: string; completed: boolean }[]) => void;
+  isSubmitting: boolean;
 }
 
 export default function DayDetailModal({
@@ -21,6 +23,7 @@ export default function DayDetailModal({
   habits,
   dailyRecords,
   onSubmit,
+  isSubmitting,
 }: DayDetailModalProps) {
   const [completedHabits, setCompletedHabits] = useState<{ id: string; completed: boolean }[]>([]);
 
@@ -28,10 +31,14 @@ export default function DayDetailModal({
     if (isOpen) {
       // Initialize completed habits from existing records
       const initialCompletedHabits = habits.map(habit => {
-        const record = dailyRecords.find(r => r.habitId.toString() === habit._id.toString());
+        // Find any completion record for this habit
+        const completion = dailyRecords
+          .flatMap(record => record.completions || [])
+          .find(c => c.habitId?.toString() === (habit._id as mongoose.Types.ObjectId).toString());
+
         return {
-          id: habit._id.toString(),
-          completed: record?.completed || false,
+          id: (habit._id as mongoose.Types.ObjectId).toString(),
+          completed: completion?.completed || false,
         };
       });
       setCompletedHabits(initialCompletedHabits);
@@ -52,7 +59,7 @@ export default function DayDetailModal({
     onSubmit(completedHabits);
   };
 
-  const hasExistingRecords = dailyRecords.length > 0;
+  const hasExistingRecords = dailyRecords.some(record => (record.completions || []).length > 0);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
@@ -65,6 +72,7 @@ export default function DayDetailModal({
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-500"
+              disabled={isSubmitting}
             >
               <span className="sr-only">Close</span>
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -75,10 +83,10 @@ export default function DayDetailModal({
 
           <div className="space-y-4">
             {habits.map(habit => {
-              const isCompleted = completedHabits.find(h => h.id === habit._id.toString())?.completed || false;
+              const completedHabit = completedHabits.find(h => h.id === (habit._id as mongoose.Types.ObjectId).toString());
               return (
                 <div
-                  key={habit._id}
+                  key={(habit._id as mongoose.Types.ObjectId).toString()}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                 >
                   <div className="flex items-center space-x-3">
@@ -86,17 +94,21 @@ export default function DayDetailModal({
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: habit.color }}
                     />
-                    <span className="text-gray-900">{habit.name}</span>
+                    <span className="font-medium text-gray-900">{habit.name}</span>
                   </div>
                   <button
-                    onClick={() => handleHabitToggle(habit._id.toString())}
-                    className={`px-4 py-2 rounded-md transition-colors ${
-                      isCompleted
-                        ? 'bg-green-500 text-white hover:bg-green-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
+                    onClick={() => handleHabitToggle((habit._id as mongoose.Types.ObjectId).toString())}
+                    className={`
+                      px-4 py-2 rounded-md text-sm font-medium
+                      ${completedHabit?.completed
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                      }
+                      transition-colors
+                    `}
+                    disabled={isSubmitting}
                   >
-                    {isCompleted ? 'Completed' : 'Mark Complete'}
+                    {completedHabit?.completed ? 'Completed' : 'Not Completed'}
                   </button>
                 </div>
               );
@@ -106,15 +118,17 @@ export default function DayDetailModal({
           <div className="mt-6 flex justify-end space-x-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               onClick={handleSubmit}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-[#FF7601] hover:bg-[#E66A00] rounded-md transition-colors disabled:opacity-50"
+              disabled={isSubmitting}
             >
-              Save Changes
+              {isSubmitting ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </div>

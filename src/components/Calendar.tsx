@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday } from 'date-fns';
 import { Habit } from '@/models/habit.model';
-import { DailyRecord } from '@/models/daily-record.model';
+import { DailyRecord, IHabitCompletion } from '@/models/daily-record.model';
 
 interface CalendarProps {
   habits: Habit[];
@@ -41,17 +41,52 @@ export default function Calendar({
 
   const getCompletionRate = (date: Date) => {
     const records = getRecordsForDate(date);
-    if (records.length === 0) return 0;
-    const completedCount = records.filter(r => r.completed).length;
-    return completedCount / records.length;
+    if (!records.length) return 0;
+
+    const completedCount = records.reduce((sum, record) => {
+      const completions = record.completions || [];
+      return sum + completions.filter(c => c.completed).length;
+    }, 0);
+
+    const totalCount = records.reduce((sum, record) => {
+      const completions = record.completions || [];
+      return sum + completions.length;
+    }, 0);
+
+    return totalCount > 0 ? completedCount / totalCount : 0;
+  };
+
+  useEffect(() => {
+    setCurrentDate(new Date());
+  }, [dailyRecords]);
+
+  const renderHabitIndicators = (records: DailyRecord[]) => {
+    return records.flatMap(record => {
+      const completions = record.completions || [];
+      return completions.map(completion => {
+        const habit = habits.find(h => 
+          h._id.toString() === completion.habitId.toString()
+        );
+        if (!habit) return null;
+        return (
+          <div
+            key={`${record._id}-${completion.habitId}`}
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: habit.color }}
+            aria-label={`${habit.name} - ${completion.completed ? 'Completed' : 'Not completed'}`}
+          />
+        );
+      });
+    }).filter(Boolean);
   };
 
   return (
-    <div>
+    <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-6">
         <button
           onClick={handlePrevMonth}
           className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          aria-label="Previous month"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -63,6 +98,7 @@ export default function Calendar({
         <button
           onClick={handleNextMonth}
           className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          aria-label="Next month"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -84,7 +120,8 @@ export default function Calendar({
           const isCurrentMonth = isSameMonth(day, currentDate);
           const isCurrentDay = isToday(day);
           const completionRate = getCompletionRate(day);
-          const hasRecords = getRecordsForDate(day).length > 0;
+          const records = getRecordsForDate(day);
+          const hasRecords = records.some(record => (record.completions || []).length > 0);
 
           return (
             <button
@@ -96,10 +133,11 @@ export default function Calendar({
                 ${isCurrentDay ? 'border-indigo-500' : 'border-gray-200'}
                 ${hasRecords ? 'bg-green-50' : ''}
               `}
+              aria-label={`${format(day, 'MMMM d, yyyy')} - ${completionRate * 100}% complete`}
             >
               <span className="text-sm font-medium">{format(day, 'd')}</span>
               
-              {hasRecords && (
+              {isCurrentMonth && (
                 <div className="mt-1">
                   <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
                     <div
@@ -108,17 +146,7 @@ export default function Calendar({
                     />
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {getRecordsForDate(day).map((record) => {
-                      const habit = habits.find(h => h._id.toString() === record.habitId.toString());
-                      if (!habit) return null;
-                      return (
-                        <div
-                          key={record._id}
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: habit.color }}
-                        />
-                      );
-                    })}
+                    {renderHabitIndicators(records)}
                   </div>
                 </div>
               )}

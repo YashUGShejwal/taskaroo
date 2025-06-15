@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Calendar from '@/components/Calendar';
 import DayDetailModal from '@/components/DayDetailModal';
 import { Habit } from '@/models/habit.model';
 import { DailyRecord } from '@/models/daily-record.model';
+import { toast } from 'sonner';
+import mongoose from 'mongoose';
 
 export default function CalendarPage() {
   const { data: session, status } = useSession();
@@ -15,8 +17,10 @@ export default function CalendarPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchHabits = async () => {
+  const fetchHabits = useCallback(async () => {
     try {
       const response = await fetch('/api/habits', {
         credentials: 'include'
@@ -26,10 +30,11 @@ export default function CalendarPage() {
       setHabits(data);
     } catch (error) {
       console.error('Error fetching habits:', error);
+      toast.error('Failed to load habits');
     }
-  };
+  }, []);
 
-  const fetchDailyRecords = async () => {
+  const fetchDailyRecords = useCallback(async () => {
     try {
       const month = currentMonth.getMonth();
       const year = currentMonth.getFullYear();
@@ -41,61 +46,116 @@ export default function CalendarPage() {
       setDailyRecords(data);
     } catch (error) {
       console.error('Error fetching daily records:', error);
+      toast.error('Failed to load daily records');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  };
+  }, [currentMonth]);
 
   useEffect(() => {
     if (session) {
       fetchHabits();
       fetchDailyRecords();
     }
-  }, [session, currentMonth]);
+  }, [session, currentMonth, fetchHabits, fetchDailyRecords]);
 
-  const handleDateClick = (date: Date) => {
+  const handleDateClick = useCallback((date: Date) => {
     setSelectedDate(date);
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleMonthChange = (date: Date) => {
+  const handleMonthChange = useCallback((date: Date) => {
     setCurrentMonth(date);
-  };
+    setIsRefreshing(true);
+  }, []);
 
-  const handleSubmitDailyRecords = async (completedHabits: { id: string; completed: boolean }[]) => {
+  const updateLocalRecords = useCallback((newRecords: DailyRecord[]) => {
+    setDailyRecords(prev => {
+      const filtered = prev.filter(r => 
+        !newRecords.some(nr => nr._id === r._id)
+      );
+      return [...filtered, ...newRecords];
+    });
+  }, []);
+
+  const handleSubmitDailyRecords = async (habits: { id: string; completed: boolean }[]) => {
+    if (!selectedDate) return;
+
+    setIsSubmitting(true);
+    const optimisticRecords = habits.map(habit => ({
+      _id: new mongoose.Types.ObjectId().toString(),
+      userId: session?.user?.id,
+      date: selectedDate,
+      completions: [{
+        habitId: habit.id,
+        completed: habit.completed
+      }],
+      score: habit.completed ? 1 : 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    // Optimistically update the UI
+    setDailyRecords(prev => {
+      const filteredRecords = prev.filter(record => 
+        record.date !== selectedDate.toISOString().split('T')[0]
+      );
+      return [...filteredRecords, ...optimisticRecords];
+    });
+
     try {
+      console.log('Submitting daily records:', {
+        date: selectedDate.toISOString(),
+        habits
+      });
+
       const response = await fetch('/api/daily-records', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
-          date: selectedDate,
-          habits: completedHabits,
+          date: selectedDate.toISOString(),
+          habits
         }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save daily records');
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+        throw new Error(errorData.error || 'Failed to save daily records');
       }
 
-      const newRecords = await response.json();
+      const updatedRecord = await response.json();
+      console.log('Updated record from server:', updatedRecord);
+
+      // Update the state with the server response
       setDailyRecords(prev => {
-        const filtered = prev.filter(r => 
-          !newRecords.some((nr: DailyRecord) => nr._id === r._id)
+        const filteredRecords = prev.filter(record => 
+          record.date !== selectedDate.toISOString().split('T')[0]
         );
-        return [...filtered, ...newRecords];
+        return [...filteredRecords, updatedRecord];
       });
-      setIsModalOpen(false);
+
+      toast.success('Daily records updated successfully');
     } catch (error) {
       console.error('Error saving daily records:', error);
-      alert('Failed to save daily records. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to save daily records');
+
+      // Revert optimistic updates on error
+      setDailyRecords(prev => {
+        const filteredRecords = prev.filter(record => 
+          record.date !== selectedDate.toISOString().split('T')[0]
+        );
+        return filteredRecords;
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const getRecordsForDate = (date: Date) => {
+  const getRecordsForDate = useCallback((date: Date) => {
     return dailyRecords.filter(record => {
       const recordDate = new Date(record.date);
       return (
@@ -104,9 +164,17 @@ export default function CalendarPage() {
         recordDate.getFullYear() === date.getFullYear()
       );
     });
-  };
+  }, [dailyRecords]);
 
   if (status === 'loading' || isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#FF7601]"></div>
+      </div>
+    );
+  }
+
+  if (isRefreshing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#FF7601]"></div>
@@ -175,6 +243,7 @@ export default function CalendarPage() {
           habits={habits}
           dailyRecords={getRecordsForDate(selectedDate)}
           onSubmit={handleSubmitDailyRecords}
+          isSubmitting={isSubmitting}
         />
       )}
     </div>
