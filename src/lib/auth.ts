@@ -1,14 +1,13 @@
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { User } from '@/types'
 
 export class AuthService {
-  static async getCurrentUser(): Promise<User | null> {
-    const session = await getServerSession(authOptions)
-    return session?.user as User || null
+  static async getCurrentUser() {
+    const session = await getServerSession()
+    return session?.user
   }
 
-  static async isAdmin(): Promise<boolean> {
+  static async isAdmin() {
     const user = await this.getCurrentUser()
     return user?.role === 'admin'
   }
@@ -16,7 +15,7 @@ export class AuthService {
   static async requireAdmin() {
     const isAdmin = await this.isAdmin()
     if (!isAdmin) {
-      throw new Error('Unauthorized: Admin access required')
+      throw new Error('Unauthorized')
     }
   }
 }

@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Habit } from '@/models/habit.model';
+import { getServerSession } from 'next-auth';
+import mongoose from 'mongoose';
+import { authOptions } from '@/lib/auth';
 
 // GET /api/habits - Get all habits for the current user
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     await connectToDatabase();
-    const habits = await Habit.find({ userId: session.user.id });
+    const habits = await Habit.find({ userId: session.user.email });
     return NextResponse.json(habits);
   } catch (error) {
     console.error('Error fetching habits:', error);
@@ -25,19 +26,18 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data = await request.json();
+    const body = await request.json();
     await connectToDatabase();
 
-    const habit = new Habit({
-      ...data,
-      userId: session.user.id,
+    const habit = await Habit.create({
+      ...body,
+      userId: session.user.email
     });
 
-    await habit.save();
     return NextResponse.json(habit);
   } catch (error) {
     console.error('Error creating habit:', error);

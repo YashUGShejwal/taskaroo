@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { DailyRecord } from '@/models/daily-record.model';
+import mongoose from 'mongoose';
 
 // GET /api/daily-records - Get daily records for a date range
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const endDate = new Date(parseInt(year), parseInt(month) + 1, 0);
 
     const records = await DailyRecord.find({
-      userId: session.user.id,
+      userId: new mongoose.Types.ObjectId(session.user.id),
       date: {
         $gte: startDate,
         $lte: endDate,
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 // POST /api/daily-records - Create or update daily record
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -54,9 +54,9 @@ export async function POST(request: Request) {
     const records = await Promise.all(
       data.habits.map(async (habit: { id: string; completed: boolean }) => {
         const existingRecord = await DailyRecord.findOne({
-          userId: session.user.id,
+          userId: new mongoose.Types.ObjectId(session.user.id),
           date: new Date(data.date),
-          habitId: habit.id,
+          habitId: new mongoose.Types.ObjectId(habit.id),
         });
 
         if (existingRecord) {
@@ -65,9 +65,9 @@ export async function POST(request: Request) {
         }
 
         return DailyRecord.create({
-          userId: session.user.id,
+          userId: new mongoose.Types.ObjectId(session.user.id),
           date: new Date(data.date),
-          habitId: habit.id,
+          habitId: new mongoose.Types.ObjectId(habit.id),
           completed: habit.completed,
         });
       })
