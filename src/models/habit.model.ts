@@ -15,7 +15,7 @@ export interface IHabit extends Document {
 const habitSchema = new Schema<IHabit>(
   {
     userId: {
-      type: String,
+      type: mongoose.Schema.Types.Mixed,
       required: true,
       index: true,
     },
@@ -53,5 +53,13 @@ const habitSchema = new Schema<IHabit>(
 
 // Create compound index for userId and name to ensure unique habit names per user
 habitSchema.index({ userId: 1, name: 1 }, { unique: true });
+
+// Prevent Mongoose from trying to cast userId to ObjectId
+habitSchema.pre('save', function(next) {
+  if (this.userId) {
+    this.userId = String(this.userId);
+  }
+  next();
+});
 
 export const Habit = mongoose.models.Habit || mongoose.model<IHabit>('Habit', habitSchema); 

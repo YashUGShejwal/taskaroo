@@ -21,9 +21,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <Providers>
           <Navigation />
-          <main className="container mx-auto px-4 md:px-8 py-6">
-            {children}
-          </main>
+            <main className="container mx-auto px-4 md:px-8 py-6">
+              {children}
+            </main>
         </Providers>
       </body>
     </html>
