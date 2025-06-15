@@ -1,9 +1,13 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IHabit extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId: string;
   name: string;
-  description?: string;
+  color: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  timeOfDay: 'morning' | 'afternoon' | 'evening';
+  reminder: boolean;
+  reminderTime: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -11,18 +15,37 @@ export interface IHabit extends Document {
 const habitSchema = new Schema<IHabit>(
   {
     userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+      type: String,
       required: true,
+      index: true,
     },
     name: {
       type: String,
       required: true,
       trim: true,
     },
-    description: {
+    color: {
       type: String,
-      trim: true,
+      required: true,
+      default: '#FF7601',
+    },
+    frequency: {
+      type: String,
+      enum: ['daily', 'weekly', 'monthly'],
+      default: 'daily',
+    },
+    timeOfDay: {
+      type: String,
+      enum: ['morning', 'afternoon', 'evening'],
+      default: 'morning',
+    },
+    reminder: {
+      type: Boolean,
+      default: false,
+    },
+    reminderTime: {
+      type: String,
+      default: '09:00',
     },
   },
   { timestamps: true }
