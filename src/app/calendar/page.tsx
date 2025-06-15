@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { format } from 'date-fns';
 import Calendar from '@/components/Calendar';
 import DayDetailModal from '@/components/DayDetailModal';
 import { Habit } from '@/models/habit.model';
@@ -30,23 +29,23 @@ export default function CalendarPage() {
 
   const fetchDailyRecords = async () => {
     try {
-      const response = await fetch(
-        `/api/daily-records?month=${currentMonth.getMonth()}&year=${currentMonth.getFullYear()}`
-      );
+      const month = currentMonth.getMonth();
+      const year = currentMonth.getFullYear();
+      const response = await fetch(`/api/daily-records?month=${month}&year=${year}`);
       if (!response.ok) throw new Error('Failed to fetch daily records');
       const data = await response.json();
       setDailyRecords(data);
     } catch (error) {
       console.error('Error fetching daily records:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (session?.user) {
-      setIsLoading(true);
-      Promise.all([fetchHabits(), fetchDailyRecords()]).finally(() => {
-        setIsLoading(false);
-      });
+    if (session) {
+      fetchHabits();
+      fetchDailyRecords();
     }
   }, [session, currentMonth]);
 
@@ -59,9 +58,7 @@ export default function CalendarPage() {
     setCurrentMonth(date);
   };
 
-  const handleSubmitDetails = async (completedHabits: { id: string; completed: boolean }[]) => {
-    if (!selectedDate) return;
-
+  const handleSubmitDailyRecords = async (completedHabits: { id: string; completed: boolean }[]) => {
     try {
       const response = await fetch('/api/daily-records', {
         method: 'POST',
@@ -69,52 +66,74 @@ export default function CalendarPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          date: selectedDate.toISOString(),
+          date: selectedDate,
           habits: completedHabits,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to save daily records');
-      await fetchDailyRecords();
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save daily records');
+      }
+
+      const newRecords = await response.json();
+      setDailyRecords(prev => {
+        const filtered = prev.filter(r => 
+          !newRecords.some((nr: DailyRecord) => nr._id === r._id)
+        );
+        return [...filtered, ...newRecords];
+      });
       setIsModalOpen(false);
     } catch (error) {
       console.error('Error saving daily records:', error);
+      alert('Failed to save daily records. Please try again.');
     }
+  };
+
+  const getRecordsForDate = (date: Date) => {
+    return dailyRecords.filter(record => {
+      const recordDate = new Date(record.date);
+      return (
+        recordDate.getDate() === date.getDate() &&
+        recordDate.getMonth() === date.getMonth() &&
+        recordDate.getFullYear() === date.getFullYear()
+      );
+    });
   };
 
   if (status === 'loading' || isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#FF7601]"></div>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h1 className="text-2xl font-bold mb-4">Please sign in to view your calendar</h1>
-        <p className="text-gray-600">You need to be signed in to track your habits.</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold text-[#00809D]">
+            Please sign in to view your calendar
+          </h2>
+        </div>
       </div>
     );
   }
 
-  const getRecordsForDate = (date: Date) => {
-    return dailyRecords.filter(
-      (record) =>
-        record.date.toDateString() === date.toDateString()
-    );
-  };
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Calendar</h1>
-          <p className="text-gray-600">Track your daily habits and progress</p>
-        </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="mb-8">
+        <h2 className="text-2xl font-semibold text-[#00809D]">Calendar</h2>
+        {selectedDate && (
+          <p className="mt-2 text-gray-600">
+            Selected date: {selectedDate.toLocaleDateString()}
+          </p>
+        )}
+      </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
           <Calendar
             habits={habits}
             dailyRecords={dailyRecords}
@@ -124,17 +143,35 @@ export default function CalendarPage() {
           />
         </div>
 
-        {selectedDate && (
-          <DayDetailModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            date={selectedDate}
-            habits={habits}
-            dailyRecords={getRecordsForDate(selectedDate)}
-            onSubmit={handleSubmitDetails}
-          />
-        )}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-medium text-[#00809D] mb-4">Your Habits</h3>
+          <ul className="space-y-3">
+            {habits.map(habit => (
+              <li key={habit._id} className="flex items-center space-x-3">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: habit.color }}
+                />
+                <span className="text-gray-700">{habit.name}</span>
+              </li>
+            ))}
+            {habits.length === 0 && (
+              <li className="text-gray-500">No habits added yet.</li>
+            )}
+          </ul>
+        </div>
       </div>
+
+      {isModalOpen && selectedDate && (
+        <DayDetailModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          date={selectedDate}
+          habits={habits}
+          dailyRecords={getRecordsForDate(selectedDate)}
+          onSubmit={handleSubmitDailyRecords}
+        />
+      )}
     </div>
   );
 } 
